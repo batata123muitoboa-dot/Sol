@@ -5,4 +5,9 @@ A new programming language, with no purpose at all. (a bit experimental)
 Only available in Portuguese!!
 
 # Installation
+
+## Linux
 ```curl -fsSL https://raw.githubusercontent.com/batata123muitoboa-dot/RScript/main/install.sh | bash```
+
+## Windows
+```curl -fsSL https://raw.githubusercontent.com/batata123muitoboa-dot/RScript/main/install.bat | cmd```
