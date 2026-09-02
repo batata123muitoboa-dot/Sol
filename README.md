@@ -10,4 +10,4 @@ Only available in Portuguese!!
 ```curl -fsSL https://raw.githubusercontent.com/batata123muitoboa-dot/RScript/main/install.sh | bash```
 
 ## Windows
-```curl -fsSL https://raw.githubusercontent.com/batata123muitoboa-dot/RScript/main/install.bat | cmd```
+```curl -fsSL https://raw.githubusercontent.com/batata123muitoboa-dot/RScript/main/install.bat -o install.bat && install.bat && del install.bat```
