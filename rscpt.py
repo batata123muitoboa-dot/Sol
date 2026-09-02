@@ -99,13 +99,14 @@ def avaliar_expressao(expr):
     expr_proc = substituir_operadores(expr_limpa)
     
     for var, val in sorted(memoria.items(), key=lambda x: len(x[0]), reverse=True):
-        val_str = str(val)
+        # MUDA ESTA LINHA: se for string, coloca entre aspas para o eval não se perder
+        val_str = f'"{val}"' if isinstance(val, str) else str(val)
         expr_proc = re.sub(r'\b' + re.escape(var) + r'\b', val_str, expr_proc)
         
     try:
         return eval(expr_proc)
     except:
-        return expr_limpa.strip('"').strip("'")
+        return False
 
 def executar_codigo(linhas):
     global elementos_ui
@@ -341,7 +342,14 @@ def executar_codigo(linhas):
 
         elif linha.startswith("se ") and "entao" in linha:
             condicao_str = linha[3:linha.index("entao")].strip()
-            resultado_condicao = bool(avaliar_expressao(condicao_str))
+
+            if " == " in condicao_str and not condicao_str.replace("==", "").strip().replace(".", "").isdigit():
+                partes_cond = condicao_str.split("==")
+                p1 = str(avaliar_expressao(partes_cond[0].strip()))
+                p2 = str(avaliar_expressao(partes_cond[1].strip()))
+                resultado_condicao = (p1 == p2)
+            else:
+                resultado_condicao = bool(avaliar_expressao(condicao_str))
 
             bloco_se, bloco_senao = [], []
             em_senao = False
