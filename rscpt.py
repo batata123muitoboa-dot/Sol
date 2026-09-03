@@ -3,11 +3,21 @@ import re
 import random
 import ast
 import time
+import os
 import tkinter as tk
 
 memoria = {}
 funcoes = {}
 elementos_ui = {}
+
+class InterrupcaoBreak(Exception):
+    """Exceção interna para interromper loops (pare/quebrar)."""
+    pass
+
+class RetornoFuncao(Exception):
+    """Exceção interna para capturar o retorno de funções (retornar)."""
+    def __init__(self, valor):
+        self.valor = valor
 
 def substituir_operadores(expressao):
     expressao = re.sub(r'\bdiferente\b', '!=', expressao)
@@ -18,6 +28,7 @@ def substituir_operadores(expressao):
     expressao = re.sub(r'\bigual\b', '==', expressao)
     expressao = re.sub(r'\be\b', ' and ', expressao)
     expressao = re.sub(r'\bou\b', ' or ', expressao)
+    expressao = re.sub(r'\bnao\b', ' not ', expressao)
     return expressao
 
 def separar_argumentos(texto):
@@ -33,10 +44,10 @@ def separar_argumentos(texto):
             elif aspas == char:
                 aspas = None
 
-        elif char == "(" and aspas is None:
+        elif char in ("(", "[", "{") and aspas is None:
             nivel += 1
 
-        elif char == ")" and aspas is None:
+        elif char in (")", "]", "}") and aspas is None:
             nivel -= 1
 
         if char == "," and aspas is None and nivel == 0:
@@ -50,77 +61,197 @@ def separar_argumentos(texto):
 
     return argumentos
 
-def avaliar_expressao(expr):
+def buscar_var(nome_var, escopo_local=None):
+    """Busca primeiro no escopo local da função e depois na memória global."""
+    if escopo_local is not None and nome_var in escopo_local:
+        return escopo_local[nome_var]
+    return memoria.get(nome_var, None)
+
+def avaliar_expressao(expr, escopo_local=None):
     expr_limpa = str(expr).strip()
     
-    if expr_limpa in memoria:
-        return memoria[expr_limpa]
+    # Suporte a leitura de dicionários via ponto (ex: jogador.vida)
+    if "." in expr_limpa and not expr_limpa.replace(".", "").isdigit() and not (expr_limpa.startswith('"') or expr_limpa.startswith("'")):
+        if not any(op in expr_limpa for op in ["+", "-", "*", "/", ">", "<", "=="]):
+            partes = expr_limpa.split(".", 1)
+            obj = buscar_var(partes[0].strip(), escopo_local)
+            if isinstance(obj, dict):
+                return obj.get(partes[1].strip(), "")
+
+    val_var = buscar_var(expr_limpa, escopo_local)
+    if val_var is not None:
+        return val_var
+
+    # Criacao de dicionarios { chave: valor, chave2: valor2 }
+    if expr_limpa.startswith("{") and expr_limpa.endswith("}"):
+        conteudo = expr_limpa[1:-1].strip()
+        dic = {}
+        if conteudo:
+            pares = separar_argumentos(conteudo)
+            for p in pares:
+                if ":" in p:
+                    k, v = p.split(":", 1)
+                    chave = k.strip().strip('"\'')
+                    dic[chave] = avaliar_expressao(v.strip(), escopo_local)
+        return dic
+
+    # Manipulação de texto sem deixar aspas vazando
+    if expr_limpa.startswith("maiusculo(") and expr_limpa.endswith(")"):
+        val = avaliar_expressao(expr_limpa[10:-1], escopo_local)
+        return str(val).strip('"\'').upper()
+
+    if expr_limpa.startswith("minusculo(") and expr_limpa.endswith(")"):
+        val = avaliar_expressao(expr_limpa[10:-1], escopo_local)
+        return str(val).strip('"\'').lower()
+
+    if expr_limpa.startswith("tamanho(") and expr_limpa.endswith(")"):
+        arg = expr_limpa[8:-1].strip()
+        val = buscar_var(arg, escopo_local)
+        if val is None:
+            val = avaliar_expressao(arg, escopo_local)
+        if isinstance(val, (list, str, dict)):
+            return len(val)
+        return 0
 
     if expr_limpa.startswith("aleatorio(") and expr_limpa.endswith(")"):
         args = expr_limpa[10:-1].split(",")
-        p1 = int(avaliar_expressao(args[0]))
-        p2 = int(avaliar_expressao(args[1]))
+        p1 = int(avaliar_expressao(args[0], escopo_local))
+        p2 = int(avaliar_expressao(args[1], escopo_local))
         return random.randint(p1, p2)
 
+    # Acesso a listas e dicionarios via item(colecao, chave_ou_posicao)
     if expr_limpa.startswith("item(") and expr_limpa.endswith(")"):
-        args = expr_limpa[5:-1].split(",")
-        nome_lista = args[0].strip()
-        posicao = int(avaliar_expressao(args[1])) - 1
-        lista_val = memoria.get(nome_lista, [])
-        if isinstance(lista_val, list) and 0 <= posicao < len(lista_val):
-            return lista_val[posicao]
+        args = separar_argumentos(expr_limpa[5:-1])
+        nome_col = args[0].strip()
+        chave_pos = avaliar_expressao(args[1], escopo_local)
+        
+        colecao = buscar_var(nome_col, escopo_local)
+        if colecao is None:
+            colecao = avaliar_expressao(nome_col, escopo_local)
+
+        if isinstance(colecao, list):
+            posicao = int(chave_pos) - 1
+            if 0 <= posicao < len(colecao):
+                return colecao[posicao]
+        elif isinstance(colecao, dict):
+            return colecao.get(str(chave_pos), "")
         return ""
 
-    if expr_limpa.startswith("tamanho(") and expr_limpa.endswith(")"):
-        nome_lista = expr_limpa[8:-1].strip()
-        lista_val = memoria.get(nome_lista, [])
-        if isinstance(lista_val, list):
-            return len(lista_val)
-        return 0
+    # Chamada de função
+    if "(" in expr_limpa and expr_limpa.endswith(")"):
+        nome_f = expr_limpa[:expr_limpa.index("(")].strip()
+        if nome_f in funcoes:
+            args_str = expr_limpa[expr_limpa.index("(")+1:-1].strip()
+            args = [avaliar_expressao(a, escopo_local) for a in separar_argumentos(args_str) if a.strip()]
+            
+            func_data = funcoes[nome_f]
+            novo_escopo_local = {}
+            for p_nome, p_val in zip(func_data["params"], args):
+                novo_escopo_local[p_nome] = p_val
+                
+            try:
+                executar_codigo(func_data["corpo"], novo_escopo_local)
+            except RetornoFuncao as ret:
+                return ret.valor
+            return None
 
     if expr_limpa.startswith("[") and expr_limpa.endswith("]"):
         conteudo = expr_limpa[1:-1]
-        itens = [i.strip().strip('"').strip("'") for i in conteudo.split(",") if i.strip()]
+        itens = [avaliar_expressao(i.strip(), escopo_local) for i in separar_argumentos(conteudo) if i.strip()]
         return itens
 
-    if "+" in expr_limpa and ("'" in expr_limpa or '"' in expr_limpa or any(v in expr_limpa for v in memoria)):
+    # Se for soma de texto explícito (entre aspas)
+    if "+" in expr_limpa and ("'" in expr_limpa or '"' in expr_limpa):
         partes = expr_limpa.split("+")
         resultado_final = ""
         for p in partes:
             p_limpo = p.strip()
-            if p_limpo in memoria:
-                resultado_final += str(memoria[p_limpo])
+            val_p = buscar_var(p_limpo, escopo_local)
+            if val_p is not None:
+                resultado_final += str(val_p)
             else:
-
-                texto_puro = p_limpo.strip('"').strip("'")
-                resultado_final += texto_puro
+                resultado_final += p_limpo.strip('"').strip("'")
         return resultado_final
 
+    # Processamento de variáveis e operadores matemáticos/lógicos
     expr_proc = substituir_operadores(expr_limpa)
     
-    for var, val in sorted(memoria.items(), key=lambda x: len(x[0]), reverse=True):
-        # MUDA ESTA LINHA: se for string, coloca entre aspas para o eval não se perder
-        val_str = f'"{val}"' if isinstance(val, str) else str(val)
-        expr_proc = re.sub(r'\b' + re.escape(var) + r'\b', val_str, expr_proc)
+    contexto = {}
+    contexto.update(memoria)
+    if escopo_local:
+        contexto.update(escopo_local)
+
+    # TRATAMENTO DE PONTO EM PROPRIEDADES (ex: jogador.vida -> 100)
+    for var, val in contexto.items():
+        if isinstance(val, dict):
+            for k, v in val.items():
+                prop = f"{var}.{k}"
+                v_str = f'"{v}"' if isinstance(v, str) else str(v)
+                expr_proc = re.sub(r'\b' + re.escape(prop) + r'\b', v_str, expr_proc)
+
+    for var, val in sorted(contexto.items(), key=lambda x: len(x[0]), reverse=True):
+        if not isinstance(val, (dict, list)):
+            val_str = f'"{val}"' if isinstance(val, str) else str(val)
+            expr_proc = re.sub(r'\b' + re.escape(var) + r'\b', val_str, expr_proc)
         
     try:
-        return eval(expr_proc)
+        res = eval(expr_proc)
+        if isinstance(res, float) and res.is_integer():
+            return int(res)
+        return res
     except:
-        return False
+        return expr_limpa.strip('"\'')
 
-def executar_codigo(linhas):
+def remover_comentario(linha):
+    """Remove comentários # ou -- somente se NÃO estiverem entre aspas."""
+    dentro_aspas = False
+    char_aspas = None
+    i = 0
+    while i < len(linha):
+        c = linha[i]
+        if c in ('"', "'"):
+            if not dentro_aspas:
+                dentro_aspas = True
+                char_aspas = c
+            elif char_aspas == c:
+                dentro_aspas = False
+                char_aspas = None
+        elif not dentro_aspas:
+            if c == '#' or (c == '-' and i + 1 < len(linha) and linha[i+1] == '-'):
+                return linha[:i].strip()
+        i += 1
+    return linha.strip()
+
+def executar_codigo(linhas, escopo_local=None):
     global elementos_ui
     i = 0
     num_linhas = len(linhas)
 
     while i < num_linhas:
-        linha = linhas[i].strip()
+        linha = remover_comentario(linhas[i])
 
-        if not linha or linha.startswith("comentario") or linha.startswith("--") or linha.startswith("#"):
+        if not linha or linha.startswith("comentario"):
             i += 1
             continue
 
-        if linha.startswith("funcao "):
+        if linha == "limpar()" or linha == "limpar":
+            os.system('cls' if os.name == 'nt' else 'clear')
+
+        elif linha in ("pare", "quebrar"):
+            raise InterrupcaoBreak()
+
+        elif linha.startswith("retornar ") or linha.startswith("retornar(") or linha == "retornar":
+            if "(" in linha and linha.endswith(")"):
+                val_expr = linha[9:-1].strip()
+            elif len(linha) > 8:
+                val_expr = linha[8:].strip()
+            else:
+                val_expr = ""
+            
+            valor_retorno = avaliar_expressao(val_expr, escopo_local) if val_expr else None
+            raise RetornoFuncao(valor_retorno)
+
+        elif linha.startswith("funcao "):
             cabecalho = linha[7:].strip()
             nome_func = cabecalho[:cabecalho.index("(")].strip()
             params_str = cabecalho[cabecalho.index("(")+1:cabecalho.index(")")].strip()
@@ -145,16 +276,22 @@ def executar_codigo(linhas):
         elif "(" in linha and linha.endswith(")") and linha[:linha.index("(")].strip() in funcoes:
             nome_func = linha[:linha.index("(")].strip()
             args_str = linha[linha.index("(")+1:-1].strip()
-            args = [avaliar_expressao(a) for a in args_str.split(",") if a.strip()]
+            args = [avaliar_expressao(a, escopo_local) for a in separar_argumentos(args_str) if a.strip()]
             
             func_data = funcoes[nome_func]
+            novo_escopo_local = {}
             for p_nome, p_val in zip(func_data["params"], args):
-                memoria[p_nome] = p_val
+                novo_escopo_local[p_nome] = p_val
                 
-            executar_codigo(func_data["corpo"])
+            try:
+                executar_codigo(func_data["corpo"], novo_escopo_local)
+            except RetornoFuncao:
+                pass
 
-        elif linha.startswith("set "):
-            conteudo = linha[4:].strip()
+        # Atribuição Local (setl) ou Global (set)
+        elif linha.startswith("set ") or linha.startswith("setl "):
+            e_local = linha.startswith("setl ")
+            conteudo = linha[5:].strip() if e_local else linha[4:].strip()
             var, val = conteudo.split(",", 1) if "," in conteudo else conteudo.split(" ", 1)
             var_nome = var.strip()
             val_str = val.strip()
@@ -166,26 +303,39 @@ def executar_codigo(linhas):
                     if isinstance(widget, tk.Entry):
                         val_obtido = widget.get()
                         try:
-                            memoria[var_nome] = float(val_obtido) if "." in val_obtido else int(val_obtido)
+                            val_final = float(val_obtido) if "." in val_obtido else int(val_obtido)
                         except ValueError:
-                            memoria[var_nome] = val_obtido
+                            val_final = val_obtido
                     else:
-                        memoria[var_nome] = ""
+                        val_final = ""
                 else:
-                    memoria[var_nome] = ""
+                    val_final = ""
             else:
-                memoria[var_nome] = avaliar_expressao(val_str)
+                val_final = avaliar_expressao(val_str, escopo_local)
+
+            # Alteração de campo de dicionário ex: set jogador.vida, 80
+            if "." in var_nome and not (var_nome.startswith('"') or var_nome.startswith("'")):
+                partes = var_nome.split(".", 1)
+                obj = buscar_var(partes[0].strip(), escopo_local)
+                if isinstance(obj, dict):
+                    obj[partes[1].strip()] = val_final
+            else:
+                if e_local and escopo_local is not None:
+                    escopo_local[var_nome] = val_final
+                else:
+                    memoria[var_nome] = val_final
 
         elif linha.startswith("adicionar(") and linha.endswith(")"):
-            args = linha[10:-1].split(",")
+            args = separar_argumentos(linha[10:-1])
             nome_lista = args[0].strip()
-            valor_novo = avaliar_expressao(args[1].strip())
+            valor_novo = avaliar_expressao(args[1].strip(), escopo_local)
             
-            if nome_lista in memoria and isinstance(memoria[nome_lista], list):
-                memoria[nome_lista].append(valor_novo)
+            alvo = buscar_var(nome_lista, escopo_local)
+            if isinstance(alvo, list):
+                alvo.append(valor_novo)
 
         elif linha.startswith("atualizar_texto(") and linha.endswith(")"):
-            args = [avaliar_expressao(a) for a in separar_argumentos(linha[16:-1])]
+            args = [avaliar_expressao(a, escopo_local) for a in separar_argumentos(linha[16:-1])]
             if len(args) >= 2:
                 id_alvo = str(args[0])
                 novo_texto = str(args[1])
@@ -197,7 +347,7 @@ def executar_codigo(linhas):
         elif linha.startswith("escrever(") and linha.endswith(")"):
             conteudo = linha[9:-1]
             args = [
-                avaliar_expressao(arg.strip())
+                avaliar_expressao(arg.strip(), escopo_local)
                 for arg in separar_argumentos(conteudo)
                 if arg.strip()
             ]
@@ -208,20 +358,25 @@ def executar_codigo(linhas):
             if "," in conteudo_ler:
                 var_nome, msg_expr = conteudo_ler.split(",", 1)
                 var_nome = var_nome.strip()
-                mensagem = avaliar_expressao(msg_expr.strip())
+                mensagem = avaliar_expressao(msg_expr.strip(), escopo_local)
                 entrada = input(mensagem)
             else:
                 var_nome = conteudo_ler.strip()
                 entrada = input()
 
             try:
-                memoria[var_nome] = float(entrada) if "." in entrada else int(entrada)
+                val_lido = float(entrada) if "." in entrada else int(entrada)
             except ValueError:
-                memoria[var_nome] = entrada
+                val_lido = entrada
+
+            if escopo_local is not None and var_nome in escopo_local:
+                escopo_local[var_nome] = val_lido
+            else:
+                memoria[var_nome] = val_lido
 
         elif linha.startswith("esperar(") and linha.endswith(")"):
             tempo_str = linha[8:-1].strip()
-            tempo_val = avaliar_expressao(tempo_str)
+            tempo_val = avaliar_expressao(tempo_str, escopo_local)
             try:
                 time.sleep(float(tempo_val))
             except (ValueError, TypeError):
@@ -235,7 +390,7 @@ def executar_codigo(linhas):
             if cabecalho_janela.endswith(")"):
                 cabecalho_janela = cabecalho_janela[:-1].strip()
 
-            args_janela = [avaliar_expressao(a.strip()) for a in cabecalho_janela.split(",")]
+            args_janela = [avaliar_expressao(a.strip(), escopo_local) for a in separar_argumentos(cabecalho_janela)]
             titulo = str(args_janela[0]) if len(args_janela) > 0 else "Janela .rscpt"
             largura = int(args_janela[1]) if len(args_janela) > 1 else 400
             altura = int(args_janela[2]) if len(args_janela) > 2 else 300
@@ -272,8 +427,7 @@ def executar_codigo(linhas):
                         continue
 
                     if l_ui.startswith("texto(") and l_ui.endswith(")"):
-                        args_txt = [avaliar_expressao(a.strip()) for a in l_ui[6:-1].split(",")]
-                        
+                        args_txt = [avaliar_expressao(a.strip(), escopo_local) for a in separar_argumentos(l_ui[6:-1])]
                         id_lbl, t_val, t_fg, t_bg = None, "", None, None
                         
                         if len(args_txt) >= 4:
@@ -302,7 +456,7 @@ def executar_codigo(linhas):
                             elementos_ui[id_lbl] = lbl
 
                     elif l_ui.startswith("caixa_texto(") and l_ui.endswith(")"):
-                        args_cx = [avaliar_expressao(a.strip()) for a in l_ui[12:-1].split(",")]
+                        args_cx = [avaliar_expressao(a.strip(), escopo_local) for a in separar_argumentos(l_ui[12:-1])]
                         id_cx = str(args_cx[0]) if len(args_cx) > 0 else "cx"
                         cx_bg = str(args_cx[1]).strip() if len(args_cx) > 1 else None
                         cx_fg = str(args_cx[2]).strip() if len(args_cx) > 2 else None
@@ -316,8 +470,7 @@ def executar_codigo(linhas):
                         elementos_ui[id_cx] = entry
 
                     elif l_ui.startswith("botao(") and l_ui.endswith(")"):
-                        args_btn = [avaliar_expressao(a.strip()) for a in l_ui[6:-1].split(",")]
-                        
+                        args_btn = [avaliar_expressao(a.strip(), escopo_local) for a in separar_argumentos(l_ui[6:-1])]
                         b_texto = str(args_btn[0]) if len(args_btn) > 0 else "Botão"
                         b_acao = str(args_btn[1]).strip() if len(args_btn) > 1 else ""
                         b_bg = str(args_btn[2]).strip() if len(args_btn) > 2 else None
@@ -326,7 +479,10 @@ def executar_codigo(linhas):
                         def criar_comando(acao_nome):
                             def acao_clique():
                                 if acao_nome in funcoes:
-                                    executar_codigo(funcoes[acao_nome]["corpo"])
+                                    try:
+                                        executar_codigo(funcoes[acao_nome]["corpo"], escopo_local)
+                                    except RetornoFuncao:
+                                        pass
                                 elif acao_nome == "sair":
                                     root.destroy()
                             return acao_clique
@@ -345,11 +501,11 @@ def executar_codigo(linhas):
 
             if " == " in condicao_str and not condicao_str.replace("==", "").strip().replace(".", "").isdigit():
                 partes_cond = condicao_str.split("==")
-                p1 = str(avaliar_expressao(partes_cond[0].strip()))
-                p2 = str(avaliar_expressao(partes_cond[1].strip()))
+                p1 = str(avaliar_expressao(partes_cond[0].strip(), escopo_local))
+                p2 = str(avaliar_expressao(partes_cond[1].strip(), escopo_local))
                 resultado_condicao = (p1 == p2)
             else:
-                resultado_condicao = bool(avaliar_expressao(condicao_str))
+                resultado_condicao = bool(avaliar_expressao(condicao_str, escopo_local))
 
             bloco_se, bloco_senao = [], []
             em_senao = False
@@ -376,9 +532,9 @@ def executar_codigo(linhas):
                 i += 1
 
             if resultado_condicao:
-                executar_codigo(bloco_se)
+                executar_codigo(bloco_se, escopo_local)
             else:
-                executar_codigo(bloco_senao)
+                executar_codigo(bloco_senao, escopo_local)
 
         elif linha.startswith("enquanto ") and "entao" in linha:
             condicao_str = linha[9:linha.index("entao")].strip()
@@ -397,8 +553,11 @@ def executar_codigo(linhas):
                 bloco_enquanto.append(linhas[i])
                 i += 1
 
-            while bool(avaliar_expressao(condicao_str)):
-                executar_codigo(bloco_enquanto)
+            while bool(avaliar_expressao(condicao_str, escopo_local)):
+                try:
+                    executar_codigo(bloco_enquanto, escopo_local)
+                except InterrupcaoBreak:
+                    break
 
         elif linha.startswith("para ") and "entao" in linha:
             cabecalho_para = linha[5:linha.index("entao")].strip()
@@ -417,27 +576,42 @@ def executar_codigo(linhas):
                 bloco_para.append(linhas[i])
                 i += 1
 
-            if " em " in cabecalho_para:
-                var_nome, lista_expr = cabecalho_para.split(" em ")
-                var_nome = var_nome.strip()
-                lista_val = avaliar_expressao(lista_expr.strip())
-                
-                if isinstance(lista_val, list):
-                    for elemento in lista_val:
-                        memoria[var_nome] = elemento
-                        executar_codigo(bloco_para)
+            try:
+                if " em " in cabecalho_para:
+                    var_nome, lista_expr = cabecalho_para.split(" em ")
+                    var_nome = var_nome.strip()
+                    lista_val = avaliar_expressao(lista_expr.strip(), escopo_local)
+                    
+                    if isinstance(lista_val, (list, dict)):
+                        for elemento in lista_val:
+                            if escopo_local is not None:
+                                escopo_local[var_nome] = elemento
+                            else:
+                                memoria[var_nome] = elemento
+                            try:
+                                executar_codigo(bloco_para, escopo_local)
+                            except InterrupcaoBreak:
+                                break
 
-            elif " de " in cabecalho_para and " até " in cabecalho_para:
-                partes = cabecalho_para.split(" de ")
-                var_nome = partes[0].strip()
-                limites = partes[1].split(" até ")
-                inicio = int(avaliar_expressao(limites[0].strip()))
-                fim_val = int(avaliar_expressao(limites[1].strip()))
-                
-                passo = 1 if inicio <= fim_val else -1
-                for val_atual in range(inicio, fim_val + passo, passo):
-                    memoria[var_nome] = val_atual
-                    executar_codigo(bloco_para)
+                elif " de " in cabecalho_para and " até " in cabecalho_para:
+                    partes = cabecalho_para.split(" de ")
+                    var_nome = partes[0].strip()
+                    limites = partes[1].split(" até ")
+                    inicio = int(avaliar_expressao(limites[0].strip(), escopo_local))
+                    fim_val = int(avaliar_expressao(limites[1].strip(), escopo_local))
+                    
+                    passo = 1 if inicio <= fim_val else -1
+                    for val_atual in range(inicio, fim_val + passo, passo):
+                        if escopo_local is not None:
+                            escopo_local[var_nome] = val_atual
+                        else:
+                            memoria[var_nome] = val_atual
+                        try:
+                            executar_codigo(bloco_para, escopo_local)
+                        except InterrupcaoBreak:
+                            break
+            except InterrupcaoBreak:
+                pass
 
         elif linha == "fim" or linha == "senao":
             pass
