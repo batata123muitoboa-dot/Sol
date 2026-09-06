@@ -380,7 +380,7 @@ def executar_codigo(linhas, escopo_local=None):
             try:
                 time.sleep(float(tempo_val))
             except (ValueError, TypeError):
-                print(f"Erro no .rscpt: tempo inválido em '{linha}'")
+                print(f"Erro no .rscpl: tempo inválido em '{linha}'")
 
         elif linha.startswith("janela("):
             elementos_ui = {}
@@ -391,7 +391,7 @@ def executar_codigo(linhas, escopo_local=None):
                 cabecalho_janela = cabecalho_janela[:-1].strip()
 
             args_janela = [avaliar_expressao(a.strip(), escopo_local) for a in separar_argumentos(cabecalho_janela)]
-            titulo = str(args_janela[0]) if len(args_janela) > 0 else "Janela .rscpt"
+            titulo = str(args_janela[0]) if len(args_janela) > 0 else "Janela .rscpl"
             largura = int(args_janela[1]) if len(args_janela) > 1 else 400
             altura = int(args_janela[2]) if len(args_janela) > 2 else 300
             bg_janela = str(args_janela[3]).strip() if len(args_janela) > 3 else None
@@ -418,7 +418,7 @@ def executar_codigo(linhas, escopo_local=None):
                 root.config(bg=bg_janela)
             
             if not bloco_janela:
-                label = tk.Label(root, text=f"Janela gerada pelo .rscpt!\nTítulo: {titulo}", font=("Arial", 12))
+                label = tk.Label(root, text=f"Janela gerada pelo .rscpl!\nTítulo: {titulo}", font=("Arial", 12))
                 label.pack(expand=True)
             else:
                 for l_ui in bloco_janela:
@@ -617,13 +617,13 @@ def executar_codigo(linhas, escopo_local=None):
             pass
 
         else:
-            print(f"Erro no .rscpt na linha {i+1}: '{linha}'")
+            print(f"Erro no .rscpl na linha {i+1}: '{linha}'")
 
         i += 1
 
 def main():
-    if len(sys.argv) < 2 or not sys.argv[1].endswith(".rscpt"):
-        print("Uso: python rscpt.py <arquivo.rscpt>")
+    if len(sys.argv) < 2 or not sys.argv[1].endswith(".rscpl"):
+        print("Uso: python rscpl.py <arquivo.rscpl>")
         return
 
     try:
