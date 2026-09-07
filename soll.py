@@ -11,25 +11,39 @@ funcoes = {}
 elementos_ui = {}
 
 class InterrupcaoBreak(Exception):
-    """Exceção interna para interromper loops (pare/quebrar)."""
     pass
 
 class RetornoFuncao(Exception):
-    """Exceção interna para capturar o retorno de funções (retornar)."""
     def __init__(self, valor):
         self.valor = valor
 
 def substituir_operadores(expressao):
-    expressao = re.sub(r'\bdiferente\b', '!=', expressao)
-    expressao = re.sub(r'\bmenos\+\b', '<=', expressao)
-    expressao = re.sub(r'\bmais\+\b', '>=', expressao)
-    expressao = re.sub(r'\bmenos\b', '<', expressao)
-    expressao = re.sub(r'\bmais\b', '>', expressao)
-    expressao = re.sub(r'\bigual\b', '==', expressao)
-    expressao = re.sub(r'\be\b', ' and ', expressao)
-    expressao = re.sub(r'\bou\b', ' or ', expressao)
-    expressao = re.sub(r'\bnao\b', ' not ', expressao)
-    return expressao
+    partes = re.split(r'(["\'])(.*?)\1', expressao)
+
+    for i in range(0, len(partes), 3):
+        trecho = partes[i]
+
+        trecho = re.sub(r'\bVerdadeiro\b', 'True', trecho)
+        trecho = re.sub(r'\bverdadeiro\b', 'True', trecho)
+        trecho = re.sub(r'\btrue\b', 'True', trecho)
+
+        trecho = re.sub(r'\bFalso\b', 'False', trecho)
+        trecho = re.sub(r'\bfalso\b', 'False', trecho)
+        trecho = re.sub(r'\bfalse\b', 'False', trecho)
+
+        trecho = re.sub(r'\bdiferente\b', '!=', trecho)
+        trecho = re.sub(r'\bmenos\+\b', '<=', trecho)
+        trecho = re.sub(r'\bmais\+\b', '>=', trecho)
+        trecho = re.sub(r'\bmenos\b', '<', trecho)
+        trecho = re.sub(r'\bmais\b', '>', trecho)
+        trecho = re.sub(r'\bigual\b', '==', trecho)
+        trecho = re.sub(r'\be\b', ' and ', trecho)
+        trecho = re.sub(r'\bou\b', ' or ', trecho)
+        trecho = re.sub(r'\bnao\b', ' not ', trecho)
+
+        partes[i] = trecho
+
+    return ''.join(partes)
 
 def separar_argumentos(texto):
     argumentos = []
@@ -62,7 +76,6 @@ def separar_argumentos(texto):
     return argumentos
 
 def buscar_var(nome_var, escopo_local=None):
-    """Busca primeiro no escopo local da função e depois na memória global."""
     if escopo_local is not None and nome_var in escopo_local:
         return escopo_local[nome_var]
     return memoria.get(nome_var, None)
@@ -203,7 +216,6 @@ def avaliar_expressao(expr, escopo_local=None):
         return expr_limpa.strip('"\'')
 
 def remover_comentario(linha):
-    """Remove comentários # ou -- somente se NÃO estiverem entre aspas."""
     dentro_aspas = False
     char_aspas = None
     i = 0
@@ -380,7 +392,7 @@ def executar_codigo(linhas, escopo_local=None):
             try:
                 time.sleep(float(tempo_val))
             except (ValueError, TypeError):
-                print(f"Erro no .rscpl: tempo inválido em '{linha}'")
+                print(f"Erro no .soll: tempo inválido em '{linha}'")
 
         elif linha.startswith("janela("):
             elementos_ui = {}
@@ -391,7 +403,7 @@ def executar_codigo(linhas, escopo_local=None):
                 cabecalho_janela = cabecalho_janela[:-1].strip()
 
             args_janela = [avaliar_expressao(a.strip(), escopo_local) for a in separar_argumentos(cabecalho_janela)]
-            titulo = str(args_janela[0]) if len(args_janela) > 0 else "Janela .rscpl"
+            titulo = str(args_janela[0]) if len(args_janela) > 0 else "Janela .soll"
             largura = int(args_janela[1]) if len(args_janela) > 1 else 400
             altura = int(args_janela[2]) if len(args_janela) > 2 else 300
             bg_janela = str(args_janela[3]).strip() if len(args_janela) > 3 else None
@@ -418,7 +430,7 @@ def executar_codigo(linhas, escopo_local=None):
                 root.config(bg=bg_janela)
             
             if not bloco_janela:
-                label = tk.Label(root, text=f"Janela gerada pelo .rscpl!\nTítulo: {titulo}", font=("Arial", 12))
+                label = tk.Label(root, text=f"Janela gerada pelo .soll!\nTítulo: {titulo}", font=("Arial", 12))
                 label.pack(expand=True)
             else:
                 for l_ui in bloco_janela:
@@ -617,13 +629,13 @@ def executar_codigo(linhas, escopo_local=None):
             pass
 
         else:
-            print(f"Erro no .rscpl na linha {i+1}: '{linha}'")
+            print(f"Erro no .soll na linha {i+1}: '{linha}'")
 
         i += 1
 
 def main():
-    if len(sys.argv) < 2 or not sys.argv[1].endswith(".rscpl"):
-        print("Uso: python rscpl.py <arquivo.rscpl>")
+    if len(sys.argv) < 2 or not sys.argv[1].endswith(".soll"):
+        print("Uso: python soll.py <arquivo.soll>")
         return
 
     try:
