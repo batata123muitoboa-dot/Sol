@@ -6,4 +6,4 @@ sleep 1
 git clone https://github.com/batata123muitoboa-dot/RScript.git
 cd RScript
 
-echo "RScript instalado em $(pwd). Use com python rscpl.py seu-arquivo.rscpl"
+echo "RScript instalado em $(pwd). Use com python soll.py seu-arquivo.soll"
