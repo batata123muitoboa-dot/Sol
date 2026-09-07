@@ -7,6 +7,6 @@ git clone https://github.com/batata123muitoboa-dot/RScript.git
 
 cd RScript
 
-echo RScript instalado em %cd%. Use com python rscpl.py seu-arquivo.rscpl
+echo RScript instalado em %cd%. Use com python soll.py seu-arquivo.soll
 
 pause
