@@ -1,0 +1,35 @@
+{
+    "name": "soll-language",
+    "displayName": "SOLL Language",
+    "description": "Suporte à linguagem de programação SOLL",
+    "version": "0.0.1",
+    "publisher": "rain",
+    "engines": {
+        "vscode": "^1.80.0"
+    },
+    "categories": [
+        "Programming Languages"
+    ],
+    "contributes": {
+        "languages": [
+            {
+                "id": "soll",
+                "aliases": [
+                    "SOLL",
+                    "soll"
+                ],
+                "extensions": [
+                    ".soll"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "soll",
+                "scopeName": "source.soll",
+                "path": "./syntaxes/soll.tmLanguage.json"
+            }
+        ]
+    }
+}
