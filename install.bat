@@ -61,7 +61,7 @@ del /q *.vsix >nul 2>&1
 
 echo Gerando extensao...
 
-call vsce package --allow-missing-repository
+call vsce package --allow-missing-repository --skip-license
 
 if errorlevel 1 (
     echo.
