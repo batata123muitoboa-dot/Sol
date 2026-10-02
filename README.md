@@ -1,7 +1,7 @@
 # Solua
 A new programming language, with no purpose at all. (a bit experimental)
 
-![SoluaExtended.png](Solua Logo)
+![Solua Logo](SoluaExtended.png)
 
 # IMPORTANT
 Only available in Portuguese!!
