@@ -6,7 +6,7 @@ Only available in Portuguese!!
 
 # Installation
 
-## Linux
+## Linux / Android
 ```curl -fsSL "https://raw.githubusercontent.com/batata123muitoboa-dot/Solua/main/install.sh?$(date +%s)" | bash```
 
 ## Windows
