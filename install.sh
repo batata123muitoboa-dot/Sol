@@ -15,7 +15,7 @@ echo
 echo "Sol instalado em $(pwd)."
 echo
 
-read -r -p "Fazer Visual Studio Code suportar Sol? [S/n] " RESPOSTA
+read -r -p "Fazer Visual Studio Code suportar Sol? [S/n] " RESPOSTA < /dev/tty
 
 if [[ -z "$RESPOSTA" || "$RESPOSTA" =~ ^[Ss]$ ]]; then
 
@@ -39,7 +39,7 @@ if [[ -z "$RESPOSTA" || "$RESPOSTA" =~ ^[Ss]$ ]]; then
 
         echo "Gerando extensão..."
 
-        if vsce package --allow-missing-repository; then
+        if vsce package --allow-missing-repository --skip-license; then
             VSIX=$(find . -maxdepth 1 -name "*.vsix" -print -quit)
 
             if [ -n "$VSIX" ]; then
