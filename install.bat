@@ -3,24 +3,24 @@
 echo ONLY AVAILABLE IN PORTUGUESE!! -- APENAS DISPONIVEL EM PORTUGUES!!
 timeout /t 1 /nobreak >nul
 
-if exist Sol (
-    echo A pasta Sol ja existe.
-    cd Sol
+if exist Solua (
+    echo A pasta Solua ja existe.
+    cd Solua
 ) else (
-    git clone https://github.com/batata123muitoboa-dot/Sol.git
+    git clone https://github.com/batata123muitoboa-dot/Solua.git
     if errorlevel 1 (
         echo Erro ao clonar o repositorio.
         pause
         exit /b 1
     )
-    cd Sol
+    cd Solua
 )
 
 echo.
-echo Sol instalado em %cd%.
+echo Solua instalado em %cd%.
 echo.
 
-set /p RESPOSTA=Fazer Visual Studio Code suportar Sol? [S/n] 
+set /p RESPOSTA=Fazer Visual Studio Code suportar Solua? [S/n] 
 
 if "%RESPOSTA%"=="" set RESPOSTA=S
 
@@ -33,7 +33,7 @@ goto fim
 :vscode
 
 echo.
-echo Instalando suporte da Sol no VS Code...
+echo Instalando suporte da Solua no VS Code...
 
 where npm >nul 2>&1
 if errorlevel 1 (
@@ -74,7 +74,7 @@ for %%F in (*.vsix) do (
     echo Instalando extensao no VS Code...
     code --install-extension "%%F"
     echo.
-    echo Suporte da Sol instalado no VS Code!
+    echo Suporte da Solua instalado no VS Code!
     goto instalado
 )
 
@@ -87,6 +87,6 @@ cd ..
 :fim
 
 echo.
-echo Sol instalado em %cd%.
+echo Solua instalado em %cd%.
 echo Use com: python soll.py seu-arquivo.soll
 pause
