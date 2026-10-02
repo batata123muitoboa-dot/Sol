@@ -1,6 +1,8 @@
 # Solua
 A new programming language, with no purpose at all. (a bit experimental)
 
+TODO: change from python to C for maximum performance
+
 # IMPORTANT
 Only available in Portuguese!!
 
