@@ -7,7 +7,7 @@ Only available in Portuguese!!
 # Installation
 
 ## Linux
-```curl -fsSL https://raw.githubusercontent.com/batata123muitoboa-dot/Solua/main/install.sh | bash```
+```curl -fsSL "https://raw.githubusercontent.com/batata123muitoboa-dot/Solua/main/install.sh?$(date +%s)" | bash```
 
 ## Windows
-```curl -fsSL https://raw.githubusercontent.com/batata123muitoboa-dot/Solua/main/install.bat -o install.bat && install.bat && del install.bat```
+```curl -fsSL "https://raw.githubusercontent.com/batata123muitoboa-dot/Solua/main/install.bat?%RANDOM%" -o install.bat && call install.bat && del install.bat```
