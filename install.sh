@@ -67,4 +67,4 @@ fi
 
 echo
 echo "Solua instalado em $(pwd)."
-echo "Use com: python soll.py seu-arquivo.soll"
+echo "Use com: ./solua seu-arquivo.soll (rapidez, Linux 64-bits) ou python soll.py seu-arquivo.soll (estabilidade, mais suporte)"
