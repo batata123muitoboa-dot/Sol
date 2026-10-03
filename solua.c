@@ -36,7 +36,7 @@ struct Scope  {
 }
 ;
 typedef enum  {
-    FLOW_OK, FLOW_BREAK, FLOW_RETURN
+    FLOW_OK, FLOW_BREAK, FLOW_RETURN, FLOW_ERROR
 }
 Flow;
 typedef struct  {
@@ -44,15 +44,19 @@ typedef struct  {
     Value *value;
 }
 ExecResult;
-struct Interpreter  {
+struct Interpreter {
     GHashTable *globals;
     GHashTable *functions;
     GHashTable *ui;
     Scope *scope;
     gboolean gtk_started;
     GtkWidget *window;
+    gboolean error;
+};
+static void solua_error(Interpreter *I,const char *mensagem) {
+    fprintf(stderr,"ERRO: %s\n",mensagem);
+    I->error=TRUE;
 }
-;
 static Value *val_null(void);
 static Value *val_num(double n);
 static Value *val_bool(gboolean b);
@@ -308,7 +312,12 @@ static Value *call_builtin(Interpreter*I,const char*n,GPtrArray*args) {
         return val_null();
     }
     Function*f=g_hash_table_lookup(I->functions,n);
-    if(!f)return val_null();
+    if(!f) {
+        char*msg=g_strdup_printf("função %s não foi declarada.",n);
+        solua_error(I,msg);
+        g_free(msg);
+        return val_null();
+    }
     Scope*old=I->scope;
     Scope*sc=scope_new(old);
     I->scope=sc;
@@ -417,7 +426,17 @@ static Value *parse_primary(Parser*p) {
         g_free(n);
         return v;
     }
-    Value*v=val_copy(lookup(p->I,n));
+    Value*found=lookup(p->I,n);
+
+    if(!found) {
+        char*msg=g_strdup_printf("variável %s não foi declarada.",n);
+        solua_error(p->I,msg);
+        g_free(msg);
+        g_free(n);
+        return val_null();
+    }
+
+    Value*v=val_copy(found);
     g_free(n);
     while(eat(p,".")) {
         char*k=ident(p);
@@ -579,13 +598,22 @@ static GPtrArray *split_args(const char*s) {
 }
 static void print_values(Interpreter*I,const char*s) {
     GPtrArray*a=split_args(s);
+
     for(guint i=0;i<a->len;i++) {
         Value*v=eval(I,g_ptr_array_index(a,i));
+
+        if(I->error) {
+            val_free(v);
+            g_ptr_array_free(a,TRUE);
+            return;
+        }
+
         char*x=value_string(v);
         printf("%s%s",i?" ":"",x);
         g_free(x);
         val_free(v);
     }
+
     putchar('\n');
     g_ptr_array_free(a,TRUE);
 }
@@ -764,6 +792,41 @@ static gboolean gui_stmt(Interpreter*I,const char*s) {
     }
     return FALSE;
 }
+typedef struct {
+    GMainLoop *loop;
+} WaitData;
+
+static gboolean wait_finish(gpointer data)
+{
+    WaitData *w = data;
+
+    if (g_main_loop_is_running(w->loop))
+        g_main_loop_quit(w->loop);
+
+    return G_SOURCE_REMOVE;
+}
+
+static void solua_wait(double seconds)
+{
+    if (seconds <= 0)
+        return;
+
+    GMainLoop *loop = g_main_loop_new(NULL, FALSE);
+
+    WaitData data = {
+        loop
+    };
+
+    g_timeout_add(
+        (guint)(seconds * 1000.0),
+        wait_finish,
+        &data
+    );
+
+    g_main_loop_run(loop);
+
+    g_main_loop_unref(loop);
+}
 static ExecResult execute_line(Interpreter*I,GPtrArray*lines,int *ip) {
     char*raw=g_ptr_array_index(lines,*ip);
     char*s=g_strdup(trim(raw));
@@ -816,9 +879,15 @@ static ExecResult execute_line(Interpreter*I,GPtrArray*lines,int *ip) {
     }
     if(starts(s,"esperar(")) {
         char*x=g_strdup(s+8);
-        if(x[strlen(x)-1]==')')x[strlen(x)-1]=0;
+
+        if(x[strlen(x)-1]==')')
+           x[strlen(x)-1]=0;
+
         Value*v=eval(I,x);
-        g_usleep((gulong)(number(v)*1000000));
+
+        if(!I->error)
+            solua_wait(number(v));
+
         val_free(v);
         g_free(x);
         g_free(s);
@@ -945,40 +1014,54 @@ static ExecResult execute_line(Interpreter*I,GPtrArray*lines,int *ip) {
         char*c=g_strdup(s+3);
         char*e=strstr(c," entao");
         if(e)*e=0;
+
         Value*v=eval(I,c);
+
         int end,ea;
-        find_matching(lines,*ip+1,&end,&ea);
-        if(truthy(v)) {
-            int lim=ea>=0?ea:end;
-            for(int j=*ip+1;j<lim;j++) {
-                *ip=j;
-                ExecResult r=execute_line(I,lines,ip);
-                if(r.flow!=FLOW_OK) {
-                    val_free(v);
-                    *ip=end;
-                    g_free(c);
-                    g_free(s);
-                    return r;
-                }
-            }
-        }else if(ea>=0) {
-            for(int j=ea+1;j<end;j++) {
-                *ip=j;
-                ExecResult r=execute_line(I,lines,ip);
-                if(r.flow!=FLOW_OK) {
-                    val_free(v);
-                    *ip=end;
-                    g_free(c);
-                    g_free(s);
-                    return r;
-                }
-            }
+
+        if(!find_matching(lines,*ip+1,&end,&ea)) {
+            val_free(v);
+            solua_error(I,"bloco 'se' sem 'fim'.");
+            g_free(c);
+            g_free(s);
+            return (ExecResult){FLOW_ERROR,NULL};
         }
+
+        gboolean cond=truthy(v);
+
+        int from;
+        int to;
+
+        if(cond) {
+            from=*ip+1;
+            to=ea>=0?ea:end;
+        }else if(ea>=0) {
+            from=ea+1;
+            to=end;
+        }else {
+            from=end;
+            to=end;
+        }
+
+        GPtrArray*body=g_ptr_array_new_with_free_func(g_free);
+
+        for(int j=from;j<to;j++) {
+            g_ptr_array_add(
+                body,
+                g_strdup(g_ptr_array_index(lines,j))
+            );
+        }
+
+        ExecResult r=execute_lines(I,body);
+
         *ip=end;
+
+        g_ptr_array_free(body,TRUE);
         val_free(v);
         g_free(c);
         g_free(s);
-        return ok;
+
+        return r;
     }
     if(starts(s,"enquanto ")) {
         char*c=g_strdup(s+9);
@@ -1156,19 +1239,47 @@ static ExecResult execute_line(Interpreter*I,GPtrArray*lines,int *ip) {
         g_free(s);
         return ok;
     }
+    Value*v=eval(I,s);
+    val_free(v);
+
+    if(I->error) {
+        g_free(s);
+        return (ExecResult){FLOW_ERROR,NULL};
+    }
+
     g_free(s);
     return ok;
 }
 static ExecResult execute_lines(Interpreter*I,GPtrArray*lines) {
-    ExecResult ok= {
-        FLOW_OK,NULL
-    }
-    ;
+    ExecResult ok = {
+        FLOW_OK,
+        NULL
+    };
+
     for(int i=0;i<(int)lines->len;i++) {
         ExecResult r=execute_line(I,lines,&i);
-        if(r.flow!=FLOW_OK)return r;
+
+        if(r.flow!=FLOW_OK)
+            return r;
+
+        if(I->error)
+            return (ExecResult){FLOW_ERROR,NULL};
     }
+
     return ok;
+}
+static void window_destroy_cb(GtkWidget *widget, gpointer data)
+{
+    (void)widget;
+
+    Interpreter *I = data;
+    I->window = NULL;
+
+    if (gtk_main_level() > 0) {
+        gtk_main_quit();
+    } else {
+        exit(0);
+    }
 }
 static void create_window(Interpreter*I,const char*args,GPtrArray*body) {
     GPtrArray*a=split_args(args);
@@ -1188,7 +1299,7 @@ static void create_window(Interpreter*I,const char*args,GPtrArray*body) {
     g_object_set_data(G_OBJECT(I->window),"solua-interpreter",I);
     gtk_widget_show_all(I->window);
     for(guint i=0;i<body->len;i++)gui_stmt(I,g_ptr_array_index(body,i));
-    g_signal_connect(I->window,"destroy",G_CALLBACK(gtk_main_quit),NULL);
+    g_signal_connect(I->window,"destroy",G_CALLBACK(window_destroy_cb),I);
     val_free(t);
     val_free(w);
     val_free(h);
@@ -1321,7 +1432,8 @@ int main(int argc,char**argv) {
         g_ptr_array_add(plain,g_strdup(s));
     }
     ExecResult r=execute_lines(&I,plain);
-    if(r.flow==FLOW_RETURN)
+
+    if(r.flow==FLOW_RETURN || r.flow==FLOW_ERROR)
         val_free(r.value);
 
     g_ptr_array_free(plain,TRUE);
@@ -1340,5 +1452,5 @@ int main(int argc,char**argv) {
     g_hash_table_destroy(I.functions);
     g_hash_table_destroy(I.globals);
 
-    return 0;
+    return r.flow==FLOW_ERROR ? 1 : 0;
 }
