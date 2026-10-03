@@ -827,6 +827,7 @@ static void solua_wait(double seconds)
 
     g_main_loop_unref(loop);
 }
+static void create_window(Interpreter*,const char*,GPtrArray*);
 static ExecResult execute_line(Interpreter*I,GPtrArray*lines,int *ip) {
     char*raw=g_ptr_array_index(lines,*ip);
     char*s=g_strdup(trim(raw));
@@ -1005,6 +1006,50 @@ static ExecResult execute_line(Interpreter*I,GPtrArray*lines,int *ip) {
         g_free(x);
         g_free(s);
         return ok;
+    }
+        if(starts(s,"janela(")) {
+        char*x=g_strdup(s+7);
+        char*e=strstr(x,") entao");
+
+        if(e) {
+            *e=0;
+
+            int end,ea;
+
+            if(!find_matching(lines,*ip+1,&end,&ea)) {
+                solua_error(I,"bloco 'janela' sem 'fim'.");
+                g_free(x);
+                g_free(s);
+                return (ExecResult){FLOW_ERROR,NULL};
+            }
+
+            GPtrArray*b=g_ptr_array_new_with_free_func(g_free);
+
+            for(int j=*ip+1;j<end;j++)
+                g_ptr_array_add(
+                    b,
+                    g_strdup(g_ptr_array_index(lines,j))
+                );
+
+            if(!I->gtk_started) {
+                int argc=0;
+                char**argv=NULL;
+                gtk_init(&argc,&argv);
+                I->gtk_started=TRUE;
+            }
+
+            create_window(I,x,b);
+
+            g_ptr_array_free(b,TRUE);
+            *ip=end;
+
+            g_free(x);
+            g_free(s);
+
+            return ok;
+        }
+
+        g_free(x);
     }
     if(gui_stmt(I,s)) {
         g_free(s);
@@ -1397,40 +1442,13 @@ int main(int argc,char**argv) {
         }
         g_ptr_array_add(mainlines,g_strdup(s));
     }
-    /* Handle janela blocks before ordinary execution. */
-    for(int i=0;i<(int)mainlines->len;i++) {
-        char*s=g_ptr_array_index(mainlines,i);
-        if(starts(s,"janela(")) {
-            char*x=g_strdup(s+7);
-            char*e=strstr(x,") entao");
-            if(e) {
-                *e=0;
-                int end,ea;
-                find_matching(mainlines,i+1,&end,&ea);
-                GPtrArray*b=g_ptr_array_new_with_free_func(g_free);
-                for(int j=i+1;j<end;j++)g_ptr_array_add(b,g_strdup(g_ptr_array_index(mainlines,j)));
-                if(!I.gtk_started) {
-                    gtk_init(&argc,&argv);
-                    I.gtk_started=TRUE;
-                }
-                create_window(&I,x,b);
-                g_ptr_array_free(b,TRUE);
-                i=end;
-                continue;
-            }
-        }
-    }
-    /* Execute non-GUI statements; GUI-only statements inside janela are already consumed. */
     GPtrArray*plain=g_ptr_array_new_with_free_func(g_free);
-    for(guint i=0;i<mainlines->len;i++) {
-        char*s=g_ptr_array_index(mainlines,i);
-        if(starts(s,"janela(")) {
-            int end,ea;
-            if(find_matching(mainlines,i+1,&end,&ea))i=end;
-            continue;
-        }
-        g_ptr_array_add(plain,g_strdup(s));
-    }
+
+    for(guint i=0;i<mainlines->len;i++)
+        g_ptr_array_add(
+            plain,
+            g_strdup(g_ptr_array_index(mainlines,i))
+        );
     ExecResult r=execute_lines(&I,plain);
 
     if(r.flow==FLOW_RETURN || r.flow==FLOW_ERROR)
